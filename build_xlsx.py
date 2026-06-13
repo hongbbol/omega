@@ -23,8 +23,10 @@ XLSX_OUT = "고양이_오메가3_제품_채점표.xlsx"
 
 # ===== RUBRIC (채점 기준) =====================================================
 # 상위 가중치: 성분 35 / 산패 30 / 원료·형태 20 / 투명성 15  (합 100)
-# 안전 점수상한: 비해양성(ALA단독)→20, 대구간유→40, 산패고위험→50
+# 안전 점수상한: 비해양성(ALA단독)→20, 대구간유·비타민A/D첨가→40, 산패고위험→50
 #   ※조류(algae) 오일은 EPA/DHA 직접공급 = 정상 / 폴락 어체유는 간유 아님
+# 안전 플래그 자동판정(수식): 비해양성=어종'식물성'(ALA단독) / 산패고위험=포장'취약'+항산화제≠'있음'+COA미공개
+#   ※대구간유('대구' 열)·비타민A/D첨가('비타민AD' 열)만 CSV 수동. 비해양성·산패고위험 CSV값은 무시되고 수식으로 계산됨.
 # 빈칸/미상 처리: 공개 안 한 항목은 해당 세부점수 0 (제외 아님). 가정 입력 금지.
 LOOKUPS = {
     "비율표기": [("명시",5),("일부",2),("미표기",0),("미상",0)],
@@ -57,7 +59,7 @@ def build():
     # ---- 기준 시트 (룩업 테이블) ----
     r=wb.active; r.title="기준"
     r["A1"]="고양이 오메가3 제품 채점 기준 (공개정보 기반·실측 전)"; r["A1"].font=Font(bold=True,size=13,name="Arial")
-    r["A2"]=("가중치 성분35/산패30/원료·형태20/투명성15 | 안전상한 비해양성(ALA)→20·대구간유→40·산패고위험→50 "
+    r["A2"]=("가중치 성분35/산패30/원료·형태20/투명성15 | 안전상한 비해양성(ALA)→20·대구간유/비타민A·D→40·산패고위험→50 "
              "| 조류오일=정상, 폴락=어체유(간유 아님)"); r["A2"].font=Font(italic=True,name="Arial")
     RNG={}; row0=4
     for name,table in LOOKUPS.items():
@@ -71,7 +73,7 @@ def build():
     # ---- 점수표 시트 ----
     s=wb.create_sheet("점수표")
     head=["번호","제품명","분류","밀도(EPA+DHA mg/단위)","순도(%)","비율표기","형태","어종","항산화제","포장","제형",
-          "인증","COA","원료사","비해양성","대구","산패고위험",
+          "인증","COA","원료사","비해양성","대구","산패고위험","비타민AD",
           "성분/35","산패/30","원료형태/20","투명성/15","합계","안전상한","최종점수","잠정순위",
           "정보검증","적합성","데이터충실도","출처·비고"]
     for j,h in enumerate(head,1):
@@ -83,10 +85,13 @@ def build():
         rr=f0+i
         vals=[row["번호"],row["제품명"],row["분류"],num(row["밀도_EPADHA_mg"]),num(row["순도_pct"]),
               row["비율표기"],row["형태"],row["어종"],row["항산화제"],row["포장"],row["제형"],
-              row["인증"],row["COA"],row["원료사"],row["비해양성"],row["대구"],row["산패고위험"]]
+              row["인증"],row["COA"],row["원료사"],row["비해양성"],row["대구"],row["산패고위험"],row["비타민AD"]]
         for j,v in enumerate(vals,1):
             c=s.cell(rr,j,v); c.font=NORM; c.border=bd
             if j>=4: c.alignment=Alignment(horizontal="center")
+        # 안전 플래그 자동판정 (CSV의 비해양성/산패고위험 값 대신 계산; 대구·비타민AD는 CSV 수동값 유지)
+        s.cell(rr,15,f'=IF(H{rr}="식물성","Y","N")')  # 비해양성 = 식물성 ALA 단독
+        s.cell(rr,17,f'=IF(AND(J{rr}="취약",I{rr}<>"있음",OR(M{rr}="없음",M{rr}="미상")),"Y","N")')  # 산패고위험
         # 점수 수식
         comp = (f'IF(NOT(ISNUMBER(D{rr})),0,IF(D{rr}>=300,20,IF(D{rr}>=200,15,IF(D{rr}>=100,10,5))))'
                 f'+IF(NOT(ISNUMBER(E{rr})),0,IF(E{rr}>=60,10,IF(E{rr}>=40,6,3)))'
@@ -96,26 +101,27 @@ def build():
         wonryo=(f'IFERROR(VLOOKUP(G{rr},{RNG["형태"]},2,FALSE),0)+IFERROR(VLOOKUP(H{rr},{RNG["어종"]},2,FALSE),0)')
         trans =(f'IFERROR(VLOOKUP(L{rr},{RNG["인증"]},2,FALSE),0)+IFERROR(VLOOKUP(M{rr},{RNG["COA"]},2,FALSE),0)'
                 f'+IFERROR(VLOOKUP(N{rr},{RNG["원료사"]},2,FALSE),0)')
-        s.cell(rr,18,"="+comp); s.cell(rr,19,"="+sanpae); s.cell(rr,20,"="+wonryo); s.cell(rr,21,"="+trans)
-        s.cell(rr,22,f"=SUM(R{rr}:U{rr})")
-        s.cell(rr,23,f'=MIN(IF(O{rr}="Y",20,100),IF(P{rr}="Y",40,100),IF(Q{rr}="Y",50,100))')
-        s.cell(rr,24,f"=MIN(V{rr},W{rr})")
-        s.cell(rr,25,f"=RANK(X{rr},$X${f0}:$X${f0+n-1},0)")
-        s.cell(rr,26,row["정보검증"]); s.cell(rr,27,row["적합성"])
+        # 비타민AD 는 col R(18) CSV 수동값. 점수 컬럼은 S(19)부터.
+        s.cell(rr,19,"="+comp); s.cell(rr,20,"="+sanpae); s.cell(rr,21,"="+wonryo); s.cell(rr,22,"="+trans)
+        s.cell(rr,23,f"=SUM(S{rr}:V{rr})")
+        s.cell(rr,24,f'=MIN(IF(O{rr}="Y",20,100),IF(P{rr}="Y",40,100),IF(Q{rr}="Y",50,100),IF(R{rr}="Y",40,100))')
+        s.cell(rr,25,f"=MIN(W{rr},X{rr})")
+        s.cell(rr,26,f"=RANK(Y{rr},$Y${f0}:$Y${f0+n-1},0)")
+        s.cell(rr,27,row["정보검증"]); s.cell(rr,28,row["적합성"])
         comp_cnt=("+".join([f'IF(ISNUMBER(D{rr}),1,0)',f'IF(ISNUMBER(E{rr}),1,0)']
                   +[f'IF({col}{rr}<>"미상",1,0)' for col in "FGHIJKLMN"]))
-        s.cell(rr,28,f'=({comp_cnt})&"/11"')
-        s.cell(rr,29,row["출처비고"])
-        for j in range(18,30):
+        s.cell(rr,29,f'=({comp_cnt})&"/11"')
+        s.cell(rr,30,row["출처비고"])
+        for j in range(19,31):
             c=s.cell(rr,j); c.font=NORM; c.border=bd
-            if j<28: c.alignment=Alignment(horizontal="center")
+            if j<29: c.alignment=Alignment(horizontal="center")
     widths={"A":5,"B":26,"C":13,"D":13,"E":8,"F":9,"G":7,"H":8,"I":9,"J":8,"K":11,"L":7,"M":7,"N":8,
-            "O":8,"P":6,"Q":10,"R":8,"S":8,"T":11,"U":10,"V":7,"W":9,"X":9,"Y":9,"Z":11,"AA":9,"AB":11,"AC":44}
+            "O":8,"P":6,"Q":10,"R":9,"S":8,"T":8,"U":11,"V":10,"W":7,"X":9,"Y":9,"Z":9,"AA":11,"AB":9,"AC":11,"AD":44}
     for k,v in widths.items(): s.column_dimensions[k].width=v
     s.freeze_panes="D2"; s.row_dimensions[1].height=42
     fill=PatternFill("solid",fgColor="EAF7F0")
     for rr in range(f0,f0+n):
-        for j in range(18,26): s.cell(rr,j).fill=fill
+        for j in range(19,27): s.cell(rr,j).fill=fill
     wb.save(XLSX_OUT)
     print(f"생성 완료: {XLSX_OUT}  (제품 {n}개)")
     print("→ Excel/LibreOffice로 열면 수식이 자동 계산됩니다.")
