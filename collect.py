@@ -74,7 +74,11 @@ def fetch_html(url, render=False):
             # 일부 실행환경은 TLS 가로채기 프록시를 거쳐 CA 불신 → 인증서 오류 무시 필요
             ctx = b.new_context(user_agent=UA, locale="ko-KR", ignore_https_errors=True)
             pg = ctx.new_page()
-            pg.goto(url, wait_until="networkidle", timeout=45000)
+            pg.goto(url, wait_until="domcontentloaded", timeout=45000)
+            try:
+                pg.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                pass  # 광고/트래커 많은 몰은 networkidle 미도달 → 무시하고 진행
             pg.wait_for_timeout(2000)
             # SPA 상세 이미지는 스크롤 시 lazy-load → 끝까지 단계 스크롤로 트리거
             try:
