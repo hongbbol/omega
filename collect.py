@@ -51,6 +51,7 @@ KW = {
             (r"\bEE\b|에틸에스터|ethyl ?ester", "EE")],
  "어종":   [(r"멸치|정어리|청어|anchovy|sardine|herring", "소형어"),
             (r"미세조류|조류|algae|schizochytrium|DSM", "조류"),
+            (r"물개|물범|바다표범|하프시?ー?실|harp ?seal|seal ?oil", "해양포유류"),
             (r"연어|salmon|명태|폴락|pollack|참치|tuna|고등어|mackerel|혼합어|일반어", "일반어"),
             (r"아마씨|치아씨|flax|들기름|ALA 단독|식물성 ALA", "식물성")],
  "항산화제":[(r"토코페롤|비타민\s?E|tocopherol|아스타잔틴|astaxanthin|로즈마리|rosemary|항산화", "있음")],
