@@ -100,7 +100,33 @@ def fetch_html(url, render=False):
 # 상세 본문 컨테이너(플랫폼별) → 없으면 업로드/에디터 경로 이미지로 폴백
 DETAIL_SEL = ["#prdDetail", "#detail", ".detail", ".goods_description", ".product-detail",
               "[class*=detail]", "#productDetail", ".se-main-container", ".cont_detail"]
-IMG_PAT = re.compile(r"(NNEditor|/web/upload|editor|/detail|/product/|/goods/|cdn).*\.(jpg|jpeg|png)", re.I)
+IMG_PAT = re.compile(r"(NNEditor|/web/upload|editor|/detail|/product/|/goods/|cdn|sabangnet|/image/)"
+                     r".*\.(jpg|jpeg|png|gif)", re.I)
+
+# ---- 핏펫몰(Next.js SPA) 전용: 상세 이미지는 GraphQL description 필드에 들어있다 ----
+FITPET_API = "https://api.fitpetmall.com/mall/graphql"
+
+def fitpetmall_detail_images(url):
+    """fitpetmall /mall/goods/<번호> → GraphQL description HTML의 상세 이미지 URL 목록.
+    상세 스펙은 SPA DOM이 아니라 description(서드파티 CDN .gif/.jpg)에 박혀 있다."""
+    import base64
+    m = re.search(r"/goods/(\d+)", url)
+    if not m:
+        return []
+    gid = base64.b64encode(f"ProductType:{m.group(1)}".encode()).decode()
+    body = json.dumps({"query": "query($id:ID!){product(id:$id){description}}",
+                       "variables": {"id": gid}}).encode()
+    r = requests.post(FITPET_API, data=body, timeout=30,
+                      headers={"Content-Type": "application/json",
+                               "Origin": "https://www.fitpetmall.com", "User-Agent": UA})
+    desc = (r.json().get("data", {}).get("product") or {}).get("description") or ""
+    soup = BeautifulSoup(desc, "lxml")
+    seen, out = set(), []
+    for img in soup.find_all("img"):
+        src = img.get("data-src") or img.get("src") or ""
+        if src and re.search(r"\.(jpg|jpeg|png|gif)", src, re.I) and src not in seen:
+            seen.add(src); out.append(src)
+    return out
 
 def extract_detail_images(html, base):
     soup = BeautifulSoup(html, "lxml")
@@ -234,6 +260,11 @@ def collect_one(no, url, render):
     if cached:
         saved = cached
         print(f"   캐시 이미지 {len(saved)}개 재사용 → {out}/ (재다운로드 생략)")
+    elif "fitpetmall.com" in url:
+        imgs = fitpetmall_detail_images(url)           # SPA: GraphQL description 경로
+        print(f"   상세 이미지 {len(imgs)}개 발견 (핏펫몰 GraphQL)")
+        saved = download(imgs, out, base)
+        print(f"   {len(saved)}개 다운로드 → {out}/")
     else:
         html = fetch_html(url, render)
         imgs = extract_detail_images(html, url)
