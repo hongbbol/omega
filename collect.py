@@ -75,7 +75,19 @@ def fetch_html(url, render=False):
             ctx = b.new_context(user_agent=UA, locale="ko-KR", ignore_https_errors=True)
             pg = ctx.new_page()
             pg.goto(url, wait_until="networkidle", timeout=45000)
-            pg.wait_for_timeout(2500)
+            pg.wait_for_timeout(2000)
+            # SPA 상세 이미지는 스크롤 시 lazy-load → 끝까지 단계 스크롤로 트리거
+            try:
+                h = pg.evaluate("document.body.scrollHeight")
+                y = 0
+                while y < h:
+                    y += 800
+                    pg.evaluate(f"window.scrollTo(0,{y})")
+                    pg.wait_for_timeout(350)
+                    h = pg.evaluate("document.body.scrollHeight")  # 로드되며 늘어남
+                pg.wait_for_timeout(1500)
+            except Exception:
+                pass
             html = pg.content()
             b.close()
             return html
