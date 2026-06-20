@@ -70,9 +70,12 @@ def fetch_html(url, render=False):
     if render:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
-            b = p.chromium.launch(args=["--no-sandbox"])
-            pg = b.new_page(user_agent=UA, locale="ko-KR")
+            b = p.chromium.launch(args=["--no-sandbox", "--ignore-certificate-errors"])
+            # 일부 실행환경은 TLS 가로채기 프록시를 거쳐 CA 불신 → 인증서 오류 무시 필요
+            ctx = b.new_context(user_agent=UA, locale="ko-KR", ignore_https_errors=True)
+            pg = ctx.new_page()
             pg.goto(url, wait_until="networkidle", timeout=45000)
+            pg.wait_for_timeout(2500)
             html = pg.content()
             b.close()
             return html
@@ -143,10 +146,12 @@ def extract_fields(text):
     t = text.replace(" ", "")  # OCR 공백 잡음 완화 (수치 인접 매칭용)
     f = {}; flags = []
     # ① 밀도: 정식 Supplement Facts 형태 "EPA n mg + DHA n mg" 를 최우선(비교표와 구분)
-    sf = re.search(r"EPA(\d{1,4}(?:\.\d+)?)mg\+DHA(\d{1,4}(?:\.\d+)?)mg", t, re.I)
+    num = r"(\d{1,4}(?:\.\d+)?)"
+    sf = (re.search(rf"EPA{num}mg\+DHA{num}mg", t, re.I)        # EPA 먼저
+          or re.search(rf"DHA{num}mg\+EPA{num}mg", t, re.I))    # DHA 먼저(역순 표기)
     if sf:
         f["밀도_EPADHA_mg"] = round(float(sf.group(1)) + float(sf.group(2))); f["비율표기"] = "명시"
-        f["_ev_밀도"] = f"EPA{sf.group(1)}+DHA{sf.group(2)} (Supplement Facts)"
+        f["_ev_밀도"] = f"{sf.group(0)} (Supplement Facts)"
     else:
         ed = re.search(r"EPA\+?DHA(\d{2,4})mg", t, re.I)
         if ed:
