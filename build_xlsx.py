@@ -28,6 +28,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 CSV_IN   = "products.csv"
 XLSX_OUT = "고양이_오메가3_제품_채점표.xlsx"
 MD_OUT   = "순위_미리보기.md"
+RANKED_OUT = "제품_순위표.csv"
 
 # ===== RUBRIC (채점 기준) =====================================================
 # 상위 가중치: 성분 35 / 산패 30 / 원료·형태 20 / 투명성 15  (합 100)
@@ -125,6 +126,25 @@ def write_preview_md(scored):
                      f"{x['_wonryo']} | {x['_trans']} | {x['_total']} | {cap} | {x['_final']} |")
     open(MD_OUT,"w",encoding="utf-8").write("\n".join(lines)+"\n")
 
+def write_ranked_csv(scored):
+    """제품을 최종점수 내림차순(순위순)으로 정렬한 CSV. 중복 항목(#2 등)은 맨 뒤로."""
+    def keyf(x):
+        dup = "중복" in x["제품명"]
+        return (1 if dup else 0, x["_rank"], int(x["번호"]))
+    ordered = sorted(scored, key=keyf)
+    cols = ["순위","최종점수","번호","제품명","분류","밀도_EPADHA_mg","순도_pct","비율표기","형태","어종",
+            "항산화제","포장","제형","인증","COA","원료사","성분35","산패30","원료형태20","투명성15",
+            "합계","안전상한","정보검증","적합성","출처비고"]
+    with open(RANKED_OUT,"w",encoding="utf-8-sig",newline="") as fp:
+        w=csv.writer(fp); w.writerow(cols)
+        for x in ordered:
+            cap = "" if x["_cap"]>=100 else x["_cap"]
+            w.writerow([x["_rank"],x["_final"],x["번호"],x["제품명"],x["분류"],
+                        x["밀도_EPADHA_mg"],x["순도_pct"],x["비율표기"],x["형태"],x["어종"],
+                        x["항산화제"],x["포장"],x["제형"],x["인증"],x["COA"],x["원료사"],
+                        x["_comp"],x["_sanpae"],x["_wonryo"],x["_trans"],x["_total"],cap,
+                        x["정보검증"],x["적합성"],x["출처비고"]])
+
 def print_preview(scored):
     ordered=sorted(scored,key=lambda x:x["_rank"])
     print(f"\n{'순위':<4}{'번호':<4}{'제품명':<26}{'성35':>5}{'산30':>5}{'원20':>5}{'투15':>5}{'합':>5}{'상한':>5}{'최종':>5}")
@@ -212,8 +232,10 @@ def build():
     # ---- Python 검산 + 미리보기 산출 ----
     scored=score_rows(rows)
     write_preview_md(scored)
+    write_ranked_csv(scored)
     print(f"생성 완료: {XLSX_OUT}  (제품 {n}개)")
     print(f"순위 스냅샷: {MD_OUT}  (엑셀 없이 점수 확인 가능)")
+    print(f"순위 정렬표: {RANKED_OUT}  (제품을 순위순으로 정렬한 CSV)")
     print_preview(scored)
     print("\n→ xlsx를 Excel/LibreOffice로 열면 동일 수식이 자동 계산됩니다.")
 
